@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Clock, Effect } from "effect"
 
 import type { AppConfig } from "../../config.js"
 import { UpstreamError } from "../../domain/errors.js"
@@ -10,13 +10,15 @@ import type { Timeline } from "./schema.js"
 import { decodeTimeline, toTwitterPost } from "./schema.js"
 
 export interface FxTwitterClient {
-  /** Posts published at or after `latest`, walking back one page at a time. */
+  /** Posts published within the last hour and after `latest`, when present. */
   readonly postsSince: (
     handle: string,
     latest: StoredPost | undefined,
     tracker: ApiCallTracker
   ) => Effect.Effect<ReadonlyArray<TwitterPost>, ExternalServiceError>
 }
+
+const MAX_LOOKBACK_MS = 60 * 60 * 1000
 
 export const makeFxTwitterClient = (config: AppConfig): FxTwitterClient => {
   const getPage = (
@@ -57,42 +59,46 @@ export const makeFxTwitterClient = (config: AppConfig): FxTwitterClient => {
     handle: string,
     latest: StoredPost | undefined,
     tracker: ApiCallTracker
-  ): Effect.Effect<ReadonlyArray<TwitterPost>, ExternalServiceError> => {
-    const cutoffSeconds = latest === undefined ? undefined : latest.publishedAt.getTime() / 1000
-    const since = cutoffSeconds === undefined ? undefined : Math.floor(cutoffSeconds) - 1
+  ): Effect.Effect<ReadonlyArray<TwitterPost>, ExternalServiceError> =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((calledAtMs) => {
+        const hourAgoSeconds = (calledAtMs - MAX_LOOKBACK_MS) / 1000
+        const latestSeconds = latest === undefined ? undefined : latest.publishedAt.getTime() / 1000
+        const cutoffSeconds = Math.max(hourAgoSeconds, latestSeconds ?? hourAgoSeconds)
+        const since = Math.floor(cutoffSeconds) - 1
 
-    const loop = (
-      cursor: string | undefined,
-      pageNumber: number,
-      collected: ReadonlyArray<TwitterPost>
-    ): Effect.Effect<ReadonlyArray<TwitterPost>, ExternalServiceError> =>
-      getPage(handle, since, cursor, tracker).pipe(
-        Effect.flatMap((page) => {
-          if (page === undefined) return Effect.succeed(collected)
-          const posts = page.results.map(toTwitterPost)
-          const fresh =
-            cutoffSeconds === undefined
-              ? posts
-              : posts.filter((post) => post.createdTimestamp >= cutoffSeconds)
-          const all = [...collected, ...fresh]
-          const crossedCheckpoint =
-            cutoffSeconds !== undefined && posts.some((post) => post.createdTimestamp < cutoffSeconds)
-          const nextCursor = page.cursor?.bottom ?? undefined
+        const loop = (
+          cursor: string | undefined,
+          pageNumber: number,
+          collected: ReadonlyArray<TwitterPost>
+        ): Effect.Effect<ReadonlyArray<TwitterPost>, ExternalServiceError> =>
+          getPage(handle, since, cursor, tracker).pipe(
+            Effect.flatMap((page) => {
+              if (page === undefined) return Effect.succeed(collected)
+              const posts = page.results.map(toTwitterPost)
+              // `since` can short-circuit with 204, but a 200 response still contains
+              // the normal timeline page, including posts older than the cutoff.
+              const fresh = posts.filter((post) => post.createdTimestamp >= cutoffSeconds)
+              const all = [...collected, ...fresh]
+              const crossedCutoff = posts.some(
+                (post) => post.createdTimestamp < cutoffSeconds
+              )
+              const nextCursor = page.cursor?.bottom ?? undefined
 
-          if (
-            cutoffSeconds === undefined ||
-            crossedCheckpoint ||
-            nextCursor === undefined ||
-            pageNumber >= config.fxTwitterMaxPages
-          ) {
-            return Effect.succeed(dedupe(all))
-          }
-          return loop(nextCursor, pageNumber + 1, all)
-        })
-      )
+              if (
+                crossedCutoff ||
+                nextCursor === undefined ||
+                pageNumber >= config.fxTwitterMaxPages
+              ) {
+                return Effect.succeed(dedupe(all))
+              }
+              return loop(nextCursor, pageNumber + 1, all)
+            })
+          )
 
-    return loop(undefined, 1, [])
-  }
+        return loop(undefined, 1, [])
+      })
+    )
 
   return { postsSince }
 }

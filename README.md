@@ -1,6 +1,6 @@
 # undoomscroll
 
-An on-demand Effect service that copies new Twitter/X posts into the `New Posts` Notion database. It reads Twitter accounts from `Accounts to check`, finds the newest stored post for each account, and asks FxTwitter only for posts after that checkpoint.
+An on-demand Effect service that copies new Twitter/X posts into the `New Posts` Notion database. It reads Twitter accounts from `Accounts to check` and asks FxTwitter for posts from the preceding hour. If an account has a newer stored checkpoint, the client uses that instead.
 
 ## Run it
 
@@ -45,9 +45,9 @@ Dependencies point inward: `server` uses `sync`, `sync` uses the adapter interfa
 
 - Only rows whose `platform` is `twitter` are read from `Accounts to check`.
 - `handle` may be a bare username, an `@username`, or an X/Twitter profile URL.
-- Existing accounts use their newest related `published_at` as a checkpoint.
-- New accounts import one page of recent posts, controlled by `FXTWITTER_PAGE_SIZE`.
-- Catch-up pagination is capped by `FXTWITTER_MAX_PAGES`.
+- Each call only considers posts from the preceding hour. The client applies this filter itself because FxTwitter's `since` parameter can return an unfiltered timeline page.
+- Existing accounts use their newest related `published_at` when it is newer than the one-hour cutoff.
+- Pagination within that window is capped by `FXTWITTER_MAX_PAGES`.
 - Replies are not requested. Reposts follow FxTwitter's default timeline behavior.
 - Inserts run oldest-first. The post `id` is checked at the checkpoint boundary to avoid duplicates.
 - Each fetch job claims tweet IDs in memory across all accounts, so a shared repost is created only once.
