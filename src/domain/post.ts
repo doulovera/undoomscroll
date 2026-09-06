@@ -12,6 +12,11 @@ export interface PostMedia {
   readonly url: string
 }
 
+export interface QuotedPost {
+  readonly text: string
+  readonly media: ReadonlyArray<PostMedia>
+}
+
 export interface TwitterPost {
   readonly id: string
   readonly url: string
@@ -20,4 +25,6 @@ export interface TwitterPost {
   readonly createdTimestamp: number
   readonly kind: PostKind
   readonly media: ReadonlyArray<PostMedia>
+  readonly quotedPost?: QuotedPost
+  readonly repostedBy?: string
 }

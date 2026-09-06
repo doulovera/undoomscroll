@@ -52,6 +52,9 @@ Dependencies point inward: `server` uses `sync`, `sync` uses the adapter interfa
 - Inserts run oldest-first. The post `id` is checked at the checkpoint boundary to avoid duplicates.
 - Each fetch job claims tweet IDs in memory across all accounts, so a shared repost is created only once.
 - The `type` select stores `post`, `quote`, `reply`, or `repost`.
+- Quote pages put the quoting post's media before the quoted post's text and media.
+- Repost pages use the reposter's handle as the title and put the reposted content in the body.
+- Image-only posts use `📸` as their title.
 - Text beyond the 2,000-character title limit continues in the page body.
 - Images and videos from the post, including quoted-post media, are added to the page body.
 

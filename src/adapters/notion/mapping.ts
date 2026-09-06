@@ -3,14 +3,14 @@ import type { PostMedia, TwitterPost } from "../../domain/post.js"
 /** Notion caps title values at 2,000 characters. */
 const TITLE_MAX_LENGTH = 2_000
 
-export const notionTitle = (text: string): string => {
+export const notionTitle = (text: string, emptyFallback = "Untitled post"): string => {
   const compact = normalizeText(text)
-  if (compact.length === 0) return "Untitled post"
-  return splitText(compact)[0] ?? "Untitled post"
+  if (compact.length === 0) return emptyFallback
+  return splitText(compact)[0] ?? emptyFallback
 }
 
 export const mapPostProperties = (accountPageId: string, post: TwitterPost) => ({
-  title: { title: [{ type: "text", text: { content: notionTitle(post.text) } }] },
+  title: { title: [{ type: "text", text: { content: postTitle(post) } }] },
   id: { rich_text: [{ type: "text", text: { content: post.id } }] },
   published_at: { date: { start: new Date(post.createdTimestamp * 1000).toISOString() } },
   url: { url: post.url },
@@ -19,8 +19,24 @@ export const mapPostProperties = (accountPageId: string, post: TwitterPost) => (
 })
 
 export const mapPostBody = (post: TwitterPost): ReadonlyArray<Record<string, unknown>> => {
-  const [, ...overflow] = splitText(normalizeText(post.text))
-  return [...overflow.map(paragraphBlock), ...post.media.map(mediaBlock)]
+  const textChunks = splitText(normalizeText(post.text))
+  const ownText = post.kind === "repost" ? textChunks : textChunks.slice(1)
+  const quotedText = splitText(normalizeText(post.quotedPost?.text ?? ""))
+
+  return [
+    ...ownText.map(paragraphBlock),
+    ...post.media.map(mediaBlock),
+    ...quotedText.map(paragraphBlock),
+    ...(post.quotedPost?.media ?? []).map(mediaBlock)
+  ]
+}
+
+const postTitle = (post: TwitterPost): string => {
+  if (post.kind === "repost" && post.repostedBy !== undefined) {
+    return `@${post.repostedBy}'s retweeted:`
+  }
+  const hasImage = post.media.some((media) => media.type === "image")
+  return notionTitle(post.text, hasImage ? "📸" : "Untitled post")
 }
 
 const normalizeText = (text: string): string => text.replace(/\s+/g, " ").trim()

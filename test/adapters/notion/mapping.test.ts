@@ -33,6 +33,48 @@ describe("mapPostProperties", () => {
     expect(notionTitle("x".repeat(2_100))).toHaveLength(2_000)
   })
 
+  it("uses a camera title for image-only posts", () => {
+    const post: TwitterPost = {
+      id: "image-only",
+      url: "https://x.com/effect_ts/status/image-only",
+      text: "",
+      createdAt: "Thu Sep 04 14:00:00 +0000 2026",
+      createdTimestamp: 1_788_528_000,
+      kind: "post",
+      media: [{ type: "image", url: "https://pbs.twimg.com/media/photo.jpg" }]
+    }
+
+    expect(mapPostProperties("account-page-id", post).title).toEqual({
+      title: [{ type: "text", text: { content: "📸" } }]
+    })
+  })
+
+  it("uses the reposter handle as the title and puts the post in the body", () => {
+    const post: TwitterPost = {
+      id: "repost",
+      url: "https://x.com/original/status/repost",
+      text: "Original post text",
+      createdAt: "Thu Sep 04 14:00:00 +0000 2026",
+      createdTimestamp: 1_788_528_000,
+      kind: "repost",
+      media: [],
+      repostedBy: "effect_ts"
+    }
+
+    expect(mapPostProperties("account-page-id", post).title).toEqual({
+      title: [{ type: "text", text: { content: "@effect_ts's retweeted:" } }]
+    })
+    expect(mapPostBody(post)).toEqual([
+      {
+        object: "block",
+        type: "paragraph",
+        paragraph: {
+          rich_text: [{ type: "text", text: { content: "Original post text" } }]
+        }
+      }
+    ])
+  })
+
   it("puts title overflow and media in page blocks", () => {
     const post: TwitterPost = {
       id: "123",
@@ -41,10 +83,11 @@ describe("mapPostProperties", () => {
       createdAt: "Thu Sep 04 14:00:00 +0000 2026",
       createdTimestamp: 1_788_528_000,
       kind: "quote",
-      media: [
-        { type: "image", url: "https://pbs.twimg.com/media/photo.jpg" },
-        { type: "video", url: "https://video.twimg.com/video.mp4" }
-      ]
+      media: [{ type: "image", url: "https://pbs.twimg.com/media/photo.jpg" }],
+      quotedPost: {
+        text: "Quoted post text",
+        media: [{ type: "video", url: "https://video.twimg.com/video.mp4" }]
+      }
     }
 
     expect(mapPostBody(post)).toEqual([
@@ -59,6 +102,13 @@ describe("mapPostProperties", () => {
         object: "block",
         type: "image",
         image: { type: "external", external: { url: "https://pbs.twimg.com/media/photo.jpg" } }
+      },
+      {
+        object: "block",
+        type: "paragraph",
+        paragraph: {
+          rich_text: [{ type: "text", text: { content: "Quoted post text" } }]
+        }
       },
       {
         object: "block",

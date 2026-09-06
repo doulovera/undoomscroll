@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 
 import { DecodeError } from "../../domain/errors.js"
-import type { PostKind, PostMedia, TwitterPost } from "../../domain/post.js"
+import type { PostKind, PostMedia, QuotedPost, TwitterPost } from "../../domain/post.js"
 
 const MediaItemSchema = Schema.Struct({
   type: Schema.String,
@@ -48,15 +48,22 @@ export const decodeTimeline = (input: unknown): Effect.Effect<Timeline, DecodeEr
     )
   )
 
-export const toTwitterPost = (post: typeof TimelinePostSchema.Type): TwitterPost => ({
-  id: post.id,
-  url: post.url,
-  text: post.text,
-  createdAt: post.created_at,
-  createdTimestamp: post.created_timestamp,
-  kind: postKind(post),
-  media: collectMedia(post)
-})
+export const toTwitterPost = (post: typeof TimelinePostSchema.Type): TwitterPost => {
+  const quotedPost = quotedPostFromValue(post.quote)
+  const repostedBy = screenNameFromValue(post.reposted_by)
+
+  return {
+    id: post.id,
+    url: post.url,
+    text: post.text,
+    createdAt: post.created_at,
+    createdTimestamp: post.created_timestamp,
+    kind: postKind(post),
+    media: mediaFromValue(post.media),
+    ...(quotedPost === undefined ? {} : { quotedPost }),
+    ...(repostedBy === undefined ? {} : { repostedBy })
+  }
+}
 
 const postKind = (post: typeof TimelinePostSchema.Type): PostKind => {
   if (post.reposted_by != null) return "repost"
@@ -65,17 +72,26 @@ const postKind = (post: typeof TimelinePostSchema.Type): PostKind => {
   return "post"
 }
 
-const collectMedia = (post: typeof TimelinePostSchema.Type): ReadonlyArray<PostMedia> => {
-  const collected = [...mediaFromValue(post.media), ...mediaFromQuote(post.quote, 0)]
-  return [...new Map(collected.map((media) => [media.url, media])).values()]
+const quotedPostFromValue = (value: unknown): QuotedPost | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const text = Reflect.get(value, "text")
+  if (typeof text !== "string") return undefined
+  return { text, media: mediaFromQuote(value, 0) }
+}
+
+const screenNameFromValue = (value: unknown): string | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const screenName = Reflect.get(value, "screen_name")
+  return typeof screenName === "string" && screenName.length > 0 ? screenName : undefined
 }
 
 const mediaFromQuote = (value: unknown, depth: number): ReadonlyArray<PostMedia> => {
   if (depth >= 3 || typeof value !== "object" || value === null) return []
-  return [
+  const collected = [
     ...mediaFromValue(Reflect.get(value, "media")),
     ...mediaFromQuote(Reflect.get(value, "quote"), depth + 1)
   ]
+  return [...new Map(collected.map((media) => [media.url, media])).values()]
 }
 
 const mediaFromValue = (value: unknown): ReadonlyArray<PostMedia> => {

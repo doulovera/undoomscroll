@@ -26,7 +26,7 @@ describe("FxTwitter timeline mapping", () => {
     expect(toTwitterPost(timeline.results[0]!)).toMatchObject({ kind: expected })
   })
 
-  it("collects media from the post and its quote", async () => {
+  it("keeps the post and quoted-post content separate", async () => {
     const timeline = await Effect.runPromise(
       decodeTimeline({
         code: 200,
@@ -37,6 +37,7 @@ describe("FxTwitter timeline mapping", () => {
               all: [{ type: "photo", url: "https://pbs.twimg.com/media/photo.jpg" }]
             },
             quote: {
+              text: "Quoted text",
               media: {
                 all: [{ type: "video", url: "https://video.twimg.com/video.mp4" }]
               }
@@ -47,9 +48,32 @@ describe("FxTwitter timeline mapping", () => {
       })
     )
 
-    expect(toTwitterPost(timeline.results[0]!).media).toEqual([
-      { type: "image", url: "https://pbs.twimg.com/media/photo.jpg" },
-      { type: "video", url: "https://video.twimg.com/video.mp4" }
-    ])
+    expect(toTwitterPost(timeline.results[0]!)).toMatchObject({
+      media: [{ type: "image", url: "https://pbs.twimg.com/media/photo.jpg" }],
+      quotedPost: {
+        text: "Quoted text",
+        media: [{ type: "video", url: "https://video.twimg.com/video.mp4" }]
+      }
+    })
+  })
+
+  it("reads the account that performed a repost", async () => {
+    const timeline = await Effect.runPromise(
+      decodeTimeline({
+        code: 200,
+        results: [
+          {
+            ...basePost,
+            reposted_by: { screen_name: "effect_ts" }
+          }
+        ],
+        cursor: { bottom: null }
+      })
+    )
+
+    expect(toTwitterPost(timeline.results[0]!)).toMatchObject({
+      kind: "repost",
+      repostedBy: "effect_ts"
+    })
   })
 })
