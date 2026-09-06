@@ -43,4 +43,36 @@ describe("syncTwitter", () => {
     expect(created).toEqual(["shared-post"])
     expect(existenceChecks).toBe(1)
   })
+
+  it("skips the latest stored ID when Notion rounded its timestamp down", async () => {
+    const created: Array<string> = []
+    let existenceChecks = 0
+    const notion: NotionClient = {
+      listTwitterAccounts: () =>
+        Effect.succeed([
+          { pageId: "account-1", pageUrl: "https://notion.so/account-1", handle: "one" }
+        ]),
+      latestPost: () =>
+        Effect.succeed({
+          id: sharedPost.id,
+          publishedAt: new Date(sharedPost.createdTimestamp * 1000 - 5_000)
+        }),
+      postExists: () => {
+        existenceChecks += 1
+        return Effect.succeed(false)
+      },
+      createPost: (_accountId, post) => Effect.sync(() => created.push(post.id))
+    }
+    const fxTwitter: FxTwitterClient = {
+      postsSince: () => Effect.succeed([sharedPost])
+    }
+
+    const summary = await Effect.runPromise(
+      syncTwitter(notion, fxTwitter, makeApiCallTracker())
+    )
+
+    expect(summary.createdPosts).toBe(0)
+    expect(created).toEqual([])
+    expect(existenceChecks).toBe(0)
+  })
 })

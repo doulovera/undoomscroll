@@ -106,11 +106,12 @@ const shouldCreate = (
   latestTimeMs: number | undefined,
   post: TwitterPost
 ): Effect.Effect<boolean, ExternalServiceError> => {
+  if (post.id === latestId) return Effect.succeed(false)
   if (latestTimeMs === undefined) {
     return notion.postExists(post.id, tracker).pipe(Effect.map((exists) => !exists))
   }
   const postTimeMs = post.createdTimestamp * 1000
   if (postTimeMs > latestTimeMs) return Effect.succeed(true)
-  if (postTimeMs < latestTimeMs || post.id === latestId) return Effect.succeed(false)
+  if (postTimeMs < latestTimeMs) return Effect.succeed(false)
   return notion.postExists(post.id, tracker).pipe(Effect.map((exists) => !exists))
 }
